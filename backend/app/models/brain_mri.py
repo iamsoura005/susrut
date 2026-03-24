@@ -53,7 +53,8 @@ def predict(file_bytes: bytes) -> dict:
         pred_label = CLASSES[pred_idx]
         confidence = cal["confidence"]
         uncertainty = entropy_uncertainty(probs)
-        heatmap_b64 = compute_gradcam(_model, img_array, pred_index=pred_idx)
+        # Pass original bytes for full-res overlay
+        heatmap_b64 = compute_gradcam(_model, img_array, pred_index=pred_idx, original_img_bytes=file_bytes)
         severity = _severity(pred_label, confidence)
 
         return {

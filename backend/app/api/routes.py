@@ -281,3 +281,34 @@ def get_feedback():
     entries = history_store.get_all_feedback()
     return {"total": len(entries), "entries": entries}
 
+
+# ── Debug ─────────────────────────────────────────────────────────────────────
+@router.get("/debug", tags=["System"])
+def debug_info():
+    """
+    Returns full system state for debugging:
+    - Model load statuses
+    - Modality classifier state
+    - Class names & model path
+    - Environment info
+    """
+    import sys
+    import tensorflow as tf
+    from app.models.registry import get_status
+    from app.services import modality_classifier as mc
+
+    return {
+        "status": "ok",
+        "python_version": sys.version,
+        "tensorflow_version": tf.__version__,
+        "models": get_status(),
+        "modality_classifier": {
+            "model_path": str(mc.MODEL_PATH),
+            "model_exists": mc.MODEL_PATH.exists(),
+            "model_loaded": mc._model is not None,
+            "class_names": mc.CLASS_NAMES,
+            "confidence_threshold": mc.ML_CONFIDENCE_THRESHOLD,
+        },
+        "outputs_dir": str(OUTPUTS_DIR),
+        "outputs_dir_exists": OUTPUTS_DIR.exists(),
+    }

@@ -54,16 +54,21 @@ def classify(file_bytes: bytes, filename: str, content_type: str) -> tuple[str, 
     """
     ext = Path(filename).suffix.lower()
     if ext in {".csv", ".dat", ".edf", ".txt"}:
+        print(f"[RadiAI] Detected modality: ecg (1.00) — ECG file extension")
         return "ecg", 1.0
 
     if _model is not None:
         modality, confidence = _ml_classify(file_bytes)
+        print(f"[RadiAI] ML classifier: {modality} ({confidence:.2f})")
         if confidence >= ML_CONFIDENCE_THRESHOLD:
+            print(f"[RadiAI] Detected modality: {modality} ({confidence:.2f}) — ML classifier")
             return modality, confidence
         # ML not confident — fall through to heuristics
         logger.info(f"ML confidence {confidence:.2f} < {ML_CONFIDENCE_THRESHOLD} — using heuristics")
 
-    return _heuristic_classify(filename, content_type, file_bytes), 0.0
+    result = _heuristic_classify(filename, content_type, file_bytes)
+    print(f"[RadiAI] Detected modality: {result} (heuristic) — keyword/dimension rules")
+    return result, 0.0
 
 
 def _ml_classify(file_bytes: bytes) -> tuple[str, float]:
@@ -83,31 +88,36 @@ def _heuristic_classify(filename: str, content_type: str, file_bytes: bytes) -> 
     name = filename.lower()
 
     KEYWORDS = {
-        "brain_mri": ["brain", "mri", "tumor", "glioma", "meningioma", "pituitary"],
-        "head_ct":   ["head", "headct", "hemorrhage", "intracranial", "skull", "cranial"],
-        "chest_ct":  ["chest", "lung", "covid", "pneumonia", "opacity", "chestct"],
-        "ecg":       ["ecg", "ekg", "cardiac", "heart", "ptbxl", "arrhythmia"],
-        "bone_xray": ["bone", "fracture", "xray", "x-ray", "skeletal", "ortho", "mura"],
+        "brain_mri": ["brain", "mri", "tumor", "glioma", "meningioma", "pituitary", "flair", "t1", "t2"],
+        "head_ct":   ["head", "headct", "hemorrhage", "intracranial", "skull", "cranial", "bleed"],
+        "chest_ct":  ["chest", "lung", "covid", "pneumonia", "opacity", "chestct", "thorax", "pulmon"],
+        "ecg":       ["ecg", "ekg", "cardiac", "heart", "ptbxl", "arrhythmia", "rhythm"],
+        "bone_xray": ["bone", "fracture", "xray", "x-ray", "skeletal", "ortho", "mura", "wrist", "elbow", "knee", "femur", "tibia"],
     }
 
     for modality, kws in KEYWORDS.items():
         if any(k in name for k in kws):
             return modality
 
-    # Image dimension heuristic
+    # Image dimension heuristic — improved, less aggressive bone_xray assignment
     try:
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(file_bytes))
         w, h = img.size
         ratio = w / h if h > 0 else 1.0
-        if ratio > 1.3:
+
+        # Only classify as bone_xray if clearly landscape AND small resolution typical of X-rays
+        if ratio > 1.5 and w < 800:
             return "bone_xray"
-        if w < 300:
+        # Very small square or near-square images are usually brain MRI slices
+        if ratio < 1.2 and w < 300:
             return "brain_mri"
-        if w < 600:
-            return "head_ct"
+        # Large near-square: likely chest CT
+        if ratio < 1.2 and w >= 300:
+            return "chest_ct"
     except Exception:
         pass
 
-    return "chest_ct"  # final fallback
+    # Safe final fallback — chest_ct is the most common modality in datasets
+    return "chest_ct"
