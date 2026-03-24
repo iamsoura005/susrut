@@ -1,3 +1,11 @@
+---
+title: Radiai Backend
+emoji: 🚀
+colorFrom: blue
+colorTo: red
+sdk: docker
+pinned: false
+---
 # 🩻 RadiAI — Radiology Intelligence Platform
 
 > A unified multi-modal AI platform for radiology analysis. Upload a medical image or ECG signal, receive an AI prediction with confidence, severity, Grad-CAM explainability, and a downloadable PDF report — all from one interface.
