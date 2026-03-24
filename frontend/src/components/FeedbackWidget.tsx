@@ -8,18 +8,19 @@ interface Props {
   result: AnalysisResult
 }
 
-type FeedbackState = 'idle' | 'expanding' | 'submitting' | 'done' | 'error'
-
 export default function FeedbackWidget({ result }: Props) {
-  const [state,           setState]           = useState<FeedbackState>('idle')
+  const [isExpanded,      setIsExpanded]      = useState(false)
+  const [isSubmitting,    setIsSubmitting]    = useState(false)
+  const [isDone,          setIsDone]          = useState(false)
+  const [isError,         setIsError]         = useState(false)
   const [correctModality, setCorrectModality] = useState<Modality>(result.modality)
   const [correctLabel,    setCorrectLabel]    = useState('')
   const [comment,         setComment]         = useState('')
   const [message,         setMessage]         = useState('')
 
   const submit = async (wasCorrect: boolean) => {
-    if (!result.report_id) { setMessage('No report ID.'); setState('error'); return }
-    setState('submitting')
+    if (!result.report_id) { setMessage('No report ID.'); setIsError(true); return }
+    setIsSubmitting(true)
     try {
       const form = new FormData()
       form.append('report_id',           result.report_id)
@@ -34,14 +35,16 @@ export default function FeedbackWidget({ result }: Props) {
       if (!res.ok) throw new Error('Server error')
       const data = await res.json()
       setMessage(data.message)
-      setState('done')
+      setIsDone(true)
     } catch {
       setMessage('Failed to submit — try again.')
-      setState('error')
+      setIsError(true)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  if (state === 'done') {
+  if (isDone) {
     return (
       <div className="feedback-widget feedback-done glass fade-in">
         <span className="feedback-done-icon">🙏</span>
@@ -58,15 +61,15 @@ export default function FeedbackWidget({ result }: Props) {
           <button
             className="feedback-btn fb-yes"
             onClick={() => { void submit(true) }}
-            disabled={state === 'submitting'}
+            disabled={isSubmitting}
             id="feedback-yes-btn"
           >
             ✅ Yes
           </button>
           <button
             className="feedback-btn fb-no"
-            onClick={() => setState('expanding')}
-            disabled={state === 'submitting'}
+            onClick={() => setIsExpanded(true)}
+            disabled={isSubmitting}
             id="feedback-no-btn"
           >
             ❌ No
@@ -74,7 +77,7 @@ export default function FeedbackWidget({ result }: Props) {
         </div>
       </div>
 
-      {state === 'expanding' && (
+      {isExpanded && (
         <div className="feedback-details fade-in">
           <div className="feedback-row">
             <label>Correct Modality</label>
@@ -114,12 +117,12 @@ export default function FeedbackWidget({ result }: Props) {
           <button
             className="btn btn-primary btn-sm"
             onClick={() => { void submit(false) }}
-            disabled={state === 'submitting'}
+            disabled={isSubmitting}
             id="feedback-submit-btn"
           >
-            {state === 'submitting' ? '⏳ Submitting…' : '📤 Submit Feedback'}
+            {isSubmitting ? '⏳ Submitting…' : '📤 Submit Feedback'}
           </button>
-          {state === 'error' && <p className="text-error">{message}</p>}
+          {isError && <p className="text-error">{message}</p>}
         </div>
       )}
     </div>

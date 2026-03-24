@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 interface Props {
   imageB64: string       // base64 PNG from Grad-CAM

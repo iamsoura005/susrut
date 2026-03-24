@@ -1,6 +1,5 @@
 import React, { useCallback, useState } from 'react'
 import type { Modality } from '../api'
-import { MODALITY_LABELS } from '../api'
 
 interface Props {
   onFile: (file: File, override?: Modality) => void
