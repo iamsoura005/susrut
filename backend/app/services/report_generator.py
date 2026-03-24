@@ -1,14 +1,10 @@
 """
-Professional medical PDF report generator — built with ReportLab.
-Produces a structured A4 report with header, patient info, prediction
-results, severity (color-coded), Grad-CAM heatmap, and disclaimer.
+PDF report generator — structured A4 medical report with patient metadata.
 """
 import base64
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
 
 logger = logging.getLogger("radiai.report")
@@ -16,36 +12,11 @@ logger = logging.getLogger("radiai.report")
 OUTPUTS_DIR = Path(__file__).parent.parent.parent / "outputs"
 
 try:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.lib.utils import ImageReader
-    from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Image,
-        Table, TableStyle, HRFlowable,
-    )
-    _RL_AVAILABLE = True
+    from fpdf import FPDF, XPos, YPos
+    _FPDF_AVAILABLE = True
 except ImportError:
-    _RL_AVAILABLE = False
-    logger.warning("reportlab not installed — PDF generation disabled. Run: pip install reportlab")
-
-
-# ─── Colour palette ───────────────────────────────────────────────────────────
-_DARK_NAVY   = colors.HexColor("#0A0F1E")
-_CYAN        = colors.HexColor("#06B6D4")
-_WHITE       = colors.white
-_LIGHT_GREY  = colors.HexColor("#F8F9FA")
-_BORDER_GREY = colors.HexColor("#CBD5E1")
-_TEXT_DARK   = colors.HexColor("#1E293B")
-_TEXT_DIM    = colors.HexColor("#64748B")
-
-_SEVERITY_COLOR = {
-    "low":      colors.HexColor("#16A34A"),
-    "medium":   colors.HexColor("#D97706"),
-    "high":     colors.HexColor("#DC2626"),
-    "critical": colors.HexColor("#7C3AED"),
-}
+    _FPDF_AVAILABLE = False
+    logger.warning("fpdf2 not installed — PDF generation disabled. Run: pip install fpdf2")
 
 
 def generate_report(
@@ -54,13 +25,12 @@ def generate_report(
     patient_meta: dict | None = None,
 ) -> tuple[str, str]:
     """
-    Generate a professional A4 PDF report.
+    Generate a structured A4 PDF report.
 
     Args:
         analysis:     Result dict from any model module.
         filename:     Original uploaded filename.
-        patient_meta: Optional dict with patient_id, radiologist_name,
-                      clinical_notes, dicom_meta.
+        patient_meta: Optional dict with patient_id, radiologist_name, clinical_notes, dicom_meta.
 
     Returns:
         (report_id, absolute_path_to_pdf)
@@ -70,239 +40,202 @@ def generate_report(
     report_path = OUTPUTS_DIR / f"report_{report_id}.pdf"
     meta        = patient_meta or {}
 
-    if not _RL_AVAILABLE:
-        logger.error("reportlab not installed — cannot generate PDF")
+    if not _FPDF_AVAILABLE:
+        logger.error("fpdf2 not installed — cannot generate PDF")
         return report_id, ""
 
     try:
-        doc = SimpleDocTemplate(
-            str(report_path),
-            pagesize=A4,
-            rightMargin=0.75 * inch,
-            leftMargin=0.75 * inch,
-            topMargin=0.5 * inch,
-            bottomMargin=0.75 * inch,
-        )
+        pdf = FPDF(format="A4")
+        pdf.set_margins(15, 15, 15)
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=20)
 
-        styles  = getSampleStyleSheet()
-        elems   = []
+        # ── Header banner ──────────────────────────────────────────────────────
+        pdf.set_fill_color(10, 15, 30)
+        pdf.rect(0, 0, 210, 44, "F")
 
-        # ── Styles ────────────────────────────────────────────────────────────
-        title_style = ParagraphStyle(
-            "RadiAITitle",
-            parent=styles["Title"],
-            fontSize=20,
-            textColor=_DARK_NAVY,
-            spaceAfter=2,
-        )
-        subtitle_style = ParagraphStyle(
-            "RadiAISub",
-            parent=styles["Normal"],
-            fontSize=9,
-            textColor=_TEXT_DIM,
-            spaceAfter=12,
-        )
-        section_style = ParagraphStyle(
-            "Section",
-            parent=styles["Heading2"],
-            fontSize=12,
-            textColor=_CYAN,
-            spaceBefore=12,
-            spaceAfter=4,
-        )
-        body_style = ParagraphStyle(
-            "Body",
-            parent=styles["Normal"],
-            fontSize=9,
-            textColor=_TEXT_DARK,
-            leading=14,
-        )
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_text_color(6, 182, 212)
+        pdf.set_xy(15, 9)
+        pdf.cell(130, 10, "RadiAI — Radiology Intelligence Report")
 
-        # ── Header ────────────────────────────────────────────────────────────
-        elems.append(Paragraph("🩻 RadiAI — AI Radiology Diagnostic Report", title_style))
-        ts = datetime.now(timezone.utc).strftime("%d %B %Y  •  %H:%M UTC")
-        elems.append(Paragraph(
-            f"Report ID: <b>{report_id[:12]}…</b>&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
-            f"Generated: {ts}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;"
-            f"File: <i>{filename}</i>",
-            subtitle_style,
-        ))
-        elems.append(HRFlowable(width="100%", thickness=2, color=_CYAN, spaceAfter=10))
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(150, 160, 180)
+        timestamp = datetime.now(timezone.utc).strftime("%d %b %Y  %H:%M UTC")
+        pdf.set_xy(15, 22)
+        pdf.cell(0, 5, f"Report ID: {report_id[:8]}   |   Generated: {timestamp}")
+        pdf.set_xy(15, 29)
+        pdf.cell(0, 5, f"File: {filename}")
 
-        # ── Patient Information ────────────────────────────────────────────────
-        pid   = meta.get("patient_id",       "").strip()
+        # Version watermark top-right
+        pdf.set_font("Helvetica", "I", 7)
+        pdf.set_text_color(80, 90, 110)
+        pdf.set_xy(150, 9)
+        pdf.cell(45, 5, "For research use only", align="R")
+        pdf.set_xy(150, 15)
+        pdf.cell(45, 5, "Not for clinical diagnosis", align="R")
+
+        pdf.ln(20)  # after header
+
+        # ── Patient Information block ──────────────────────────────────────────
+        pid   = meta.get("patient_id", "").strip()
         rname = meta.get("radiologist_name", "").strip()
-        notes = meta.get("clinical_notes",   "").strip()
-        dmeta = meta.get("dicom_meta",       {})
+        notes = meta.get("clinical_notes", "").strip()
+        dmeta = meta.get("dicom_meta", {})
 
-        if any([pid, rname, notes, dmeta]):
-            elems.append(Paragraph("Patient Information", section_style))
-            rows = []
-            if pid or rname:
-                rows.append([_bold("Patient ID"), pid or "—", _bold("Radiologist"), rname or "—"])
+        has_patient_info = any([pid, rname, notes, dmeta])
+        if has_patient_info:
+            _section(pdf, "Patient Information")
+            _two_col_row(pdf, "Patient ID",       pid   or "—",
+                              "Radiologist",      rname or "—")
             if dmeta.get("patient_name"):
-                rows.append([_bold("Patient Name"), str(dmeta["patient_name"]),
-                             _bold("Study Date"),   dmeta.get("study_date", "—")])
-            if rows:
-                pt = Table(rows, colWidths=[1.1*inch, 2.5*inch, 1.1*inch, 2.5*inch])
-                pt.setStyle(_base_table_style())
-                elems.append(pt)
+                _two_col_row(pdf, "Patient Name",  str(dmeta["patient_name"]),
+                                  "Study Date",   dmeta.get("study_date", "—"))
+            if dmeta.get("institution"):
+                _two_col_row(pdf, "Institution",  dmeta.get("institution", "—"),
+                                  "Modality Tag", dmeta.get("modality_tag", "—"))
+            if dmeta.get("series_desc"):
+                _kv(pdf, "Series Description", dmeta["series_desc"])
             if notes:
-                elems.append(Spacer(1, 6))
-                elems.append(Paragraph(f"<b>Clinical Notes:</b> {notes}", body_style))
+                pdf.set_font("Helvetica", "B", 9)
+                pdf.set_text_color(80, 80, 100)
+                pdf.cell(55, 6, "Clinical Notes:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.set_font("Helvetica", "", 9)
+                pdf.set_text_color(20, 20, 40)
+                pdf.multi_cell(0, 6, notes)
+            pdf.ln(2)
 
-        # ── Scan Details ───────────────────────────────────────────────────────
-        elems.append(Paragraph("Scan Details", section_style))
-        modality_display = analysis.get("modality", "unknown").replace("_", " ").upper()
-        mod_conf = analysis.get("modality_confidence")
-        mod_conf_str = f"{mod_conf:.0%}" if mod_conf is not None else "—"
-        scan_rows = [
-            [_bold("Filename"),         filename,         _bold("Modality"),      modality_display],
-            [_bold("Auto-detected at"), mod_conf_str,     _bold("Stub mode"),     "Yes" if analysis.get("stub") else "No"],
-        ]
-        st = Table(scan_rows, colWidths=[1.1*inch, 2.5*inch, 1.1*inch, 2.5*inch])
-        st.setStyle(_base_table_style())
-        elems.append(st)
-
-        # ── AI Prediction Result ───────────────────────────────────────────────
-        elems.append(Paragraph("AI Prediction Result", section_style))
+        # ── Analysis Summary ───────────────────────────────────────────────────
+        _section(pdf, "Analysis Summary")
+        modality   = analysis.get("modality", "unknown").replace("_", " ").upper()
         prediction = analysis.get("prediction", "N/A")
         confidence = analysis.get("confidence", 0.0)
-        sev        = analysis.get("severity", {})
-        sev_level  = sev.get("level", "Unknown")
-        sev_score  = sev.get("score", 0.0)
-        sev_color  = _SEVERITY_COLOR.get(sev_level.lower(), _TEXT_DARK)
+        calibrated = analysis.get("calibrated", False)
+        cal_temp   = analysis.get("calibration_temperature", "N/A")
+        mod_conf   = analysis.get("modality_confidence", None)
+        stub       = analysis.get("stub", False)
 
-        conf_str = f"{confidence:.1%}"
-        if analysis.get("calibrated"):
-            conf_str += f"  (calibrated T={analysis.get('calibration_temperature', '?')})"
+        conf_label = f"{confidence:.1%}"
+        if calibrated:
+            conf_label += f"  (calibrated, T={cal_temp})"
 
-        result_data = [
-            [_bold("Prediction"),  Paragraph(f"<b>{prediction.upper()}</b>", body_style),
-             _bold("Confidence"),  conf_str],
-            [_bold("Severity"),    Paragraph(f"<font color='#{_hex(sev_color)}'><b>{sev_level}</b></font>", body_style),
-             _bold("Sev. Score"),  f"{sev_score:.3f}"],
-        ]
-        rt = Table(result_data, colWidths=[1.1*inch, 2.5*inch, 1.1*inch, 2.5*inch])
-        rt.setStyle(_base_table_style())
-        elems.append(rt)
+        _two_col_row(pdf, "Modality", modality, "Prediction", prediction)
+        _two_col_row(pdf, "Confidence", conf_label,
+                          "Modality Detected At", f"{mod_conf:.0%}" if mod_conf is not None else "—")
+        if stub:
+            _kv(pdf, "⚠ Status", "STUB — Model weights not loaded")
 
-        if sev.get("description"):
-            elems.append(Spacer(1, 4))
-            elems.append(Paragraph(f"<i>{sev['description']}</i>", body_style))
+        # ── Severity ───────────────────────────────────────────────────────────
+        sev = analysis.get("severity", {})
+        if sev:
+            pdf.ln(3)
+            _section(pdf, "Severity Assessment")
+            _two_col_row(pdf, "Level", sev.get("level", "Unknown"),
+                              "Score", f"{sev.get('score', 0):.3f}")
+            _kv(pdf, "Description", sev.get("description", ""))
 
         # ── Uncertainty ────────────────────────────────────────────────────────
         unc = analysis.get("uncertainty", {})
         if unc:
-            elems.append(Paragraph("Uncertainty Assessment", section_style))
-            unc_rows = [[
-                _bold("Flag"), unc.get("flag", "—"),
-                _bold("Norm. Entropy"), f"{unc.get('normalized_entropy', 0):.4f}",
-            ]]
-            ut = Table(unc_rows, colWidths=[1.1*inch, 2.5*inch, 1.1*inch, 2.5*inch])
-            ut.setStyle(_base_table_style())
-            elems.append(ut)
+            pdf.ln(3)
+            _section(pdf, "Uncertainty")
+            _two_col_row(pdf, "Flag",              unc.get("flag", ""),
+                              "Normalized Entropy", f"{unc.get('normalized_entropy', 0):.4f}")
 
         # ── Class Probabilities ────────────────────────────────────────────────
         cp = analysis.get("class_probabilities", {})
         if cp:
-            elems.append(Paragraph("Class Probabilities", section_style))
+            pdf.ln(3)
+            _section(pdf, "Class Probabilities")
             items = list(cp.items())
-            cp_rows = [[_bold(k), f"{v:.2%}"] for k, v in items]
-            cpt = Table(cp_rows, colWidths=[2.5*inch, 4.75*inch])
-            cpt.setStyle(_base_table_style())
-            elems.append(cpt)
+            for i in range(0, len(items), 2):
+                if i + 1 < len(items):
+                    _two_col_row(pdf,
+                        items[i][0],   f"{items[i][1]:.2%}",
+                        items[i+1][0], f"{items[i+1][1]:.2%}")
+                else:
+                    _kv(pdf, items[i][0], f"{items[i][1]:.2%}")
 
-        # ── Grad-CAM Image ─────────────────────────────────────────────────────
+        # ── Explainability image ───────────────────────────────────────────────
         expl    = analysis.get("explainability", {})
         img_b64 = expl.get("image_b64", "")
-        expl_type = expl.get("type", "")
-
-        elems.append(Paragraph("Explainability — Grad-CAM Heatmap", section_style))
         if img_b64:
             try:
-                img_bytes  = base64.b64decode(img_b64)
-                img_reader = ImageReader(BytesIO(img_bytes))
-                img_w, img_h = img_reader.getSize()
-                # Fit into max 4.0" x 3.5" box keeping aspect ratio
-                max_w, max_h = 4.0 * inch, 3.5 * inch
-                scale = min(max_w / img_w, max_h / img_h)
-                rl_img = Image(BytesIO(img_bytes), width=img_w * scale, height=img_h * scale)
-                elems.append(rl_img)
+                img_bytes = base64.b64decode(img_b64)
+                img_path  = OUTPUTS_DIR / f"heatmap_{report_id}.png"
+                img_path.write_bytes(img_bytes)
+                pdf.ln(3)
+                _section(pdf, f"Explainability — {expl.get('type','').replace('_',' ').title()}")
+                pdf.set_font("Helvetica", "I", 9)
+                pdf.set_text_color(100, 100, 130)
+                pdf.multi_cell(0, 5, expl.get("description", ""))
+                pdf.ln(2)
+                y = pdf.get_y()
+                if y > 230:
+                    pdf.add_page()
+                    y = pdf.get_y()
+                pdf.image(str(img_path), x=15, y=y, w=85)
+                pdf.ln(90)
+                img_path.unlink(missing_ok=True)
             except Exception as img_err:
                 logger.warning(f"Could not embed heatmap: {img_err}")
-                elems.append(Paragraph("Heatmap could not be embedded.", body_style))
-        elif expl_type == "not_applicable":
-            elems.append(Paragraph(
-                "Grad-CAM is not applicable for this modality (ECG / non-image model).", body_style
-            ))
-        else:
-            elems.append(Paragraph("Grad-CAM not available for this scan.", body_style))
 
-        if expl.get("description"):
-            elems.append(Spacer(1, 4))
-            elems.append(Paragraph(f"<i>{expl['description']}</i>", body_style))
-
-        # ── AI Interpretation ──────────────────────────────────────────────────
-        ai_desc = expl.get("description") or sev.get("description") or "No additional interpretation provided."
-        if ai_desc:
-            elems.append(Paragraph("AI Interpretation", section_style))
-            elems.append(Paragraph(ai_desc, body_style))
-
-        # ── Disclaimer ─────────────────────────────────────────────────────────
-        elems.append(Spacer(1, 16))
-        elems.append(HRFlowable(width="100%", thickness=1, color=_BORDER_GREY, spaceBefore=4))
-        disclaimer_style = ParagraphStyle(
-            "Disclaimer",
-            parent=styles["Normal"],
-            fontSize=7.5,
-            textColor=_TEXT_DIM,
-            leading=10,
+        # ── Page number footer ─────────────────────────────────────────────────
+        pdf.set_y(-25)
+        pdf.set_draw_color(30, 40, 60)
+        pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "I", 7)
+        pdf.set_text_color(140, 140, 160)
+        pdf.multi_cell(
+            0, 4,
+            "DISCLAIMER: This report is generated by an AI system for research and educational purposes only. "
+            "It does not constitute medical advice and must not be used for clinical diagnosis or treatment. "
+            "Always consult a qualified healthcare professional.",
         )
-        elems.append(Paragraph(
-            "⚠ DISCLAIMER: This report is generated by an AI system for research and educational "
-            "purposes only. It does not constitute medical advice and must not be used for clinical "
-            "diagnosis or treatment. Always consult a qualified healthcare professional.",
-            disclaimer_style,
-        ))
 
-        doc.build(elems)
+        pdf.output(str(report_path))
         logger.info(f"✅ Report saved: {report_path}")
         return report_id, str(report_path)
 
     except Exception as e:
-        logger.error(f"Report generation failed: {e}", exc_info=True)
+        logger.error(f"Report generation failed: {e}")
         return report_id, ""
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _bold(text: str) -> Paragraph:
-    """Return a bolded Paragraph for use inside Table cells."""
-    from reportlab.lib.styles import getSampleStyleSheet
-    styles = getSampleStyleSheet()
-    s = ParagraphStyle("CellBold", parent=styles["Normal"], fontSize=9,
-                       textColor=_TEXT_DIM, fontName="Helvetica-Bold")
-    return Paragraph(text, s)
+def _section(pdf, title: str):
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(6, 182, 212)
+    pdf.cell(0, 8, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_draw_color(6, 182, 212)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.ln(2)
+    pdf.set_text_color(20, 20, 40)
 
 
-def _base_table_style():
-    return TableStyle([
-        ("BACKGROUND",  (0, 0), (-1, 0), _LIGHT_GREY),
-        ("BOX",         (0, 0), (-1, -1), 0.75, _BORDER_GREY),
-        ("INNERGRID",   (0, 0), (-1, -1), 0.4,  _BORDER_GREY),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [_WHITE, _LIGHT_GREY]),
-        ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",  (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-    ])
+def _kv(pdf, key: str, value: str):
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(80, 80, 100)
+    pdf.cell(55, 6, f"{key}:", new_x=XPos.RIGHT, new_y=YPos.LAST)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(20, 20, 40)
+    pdf.multi_cell(0, 6, str(value), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
-def _hex(color) -> str:
-    """Convert a ReportLab color to a 6-char hex string (no leading #)."""
-    try:
-        r, g, b = int(color.red * 255), int(color.green * 255), int(color.blue * 255)
-        return f"{r:02X}{g:02X}{b:02X}"
-    except Exception:
-        return "1E293B"
+def _two_col_row(pdf, k1: str, v1: str, k2: str, v2: str):
+    """Render two key-value pairs side-by-side in a two-column layout."""
+    col_w = 85
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(80, 80, 100)
+    pdf.cell(30, 6, f"{k1}:", new_x=XPos.RIGHT, new_y=YPos.LAST)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(20, 20, 40)
+    pdf.cell(col_w - 30, 6, str(v1)[:50], new_x=XPos.RIGHT, new_y=YPos.LAST)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(80, 80, 100)
+    pdf.cell(30, 6, f"{k2}:", new_x=XPos.RIGHT, new_y=YPos.LAST)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(20, 20, 40)
+    pdf.cell(0, 6, str(v2)[:50], new_x=XPos.LMARGIN, new_y=YPos.NEXT)

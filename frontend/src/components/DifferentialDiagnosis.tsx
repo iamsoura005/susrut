@@ -1,5 +1,3 @@
-import { motion } from 'framer-motion'
-import { Microscope, ShieldCheck } from 'lucide-react'
 import type { AnalysisResult, Modality } from '../api'
 
 // Clinical one-line descriptions for each class per modality
@@ -15,6 +13,7 @@ const DESCRIPTIONS: Partial<Record<Modality, Record<string, string>>> = {
     'Lung Opacity':     'Consolidation or opacity — differential includes pneumonia, fluid, or fibrosis.',
     'Normal':           'No significant pulmonary pathology identified.',
     'Viral Pneumonia':  'Diffuse interstitial changes consistent with viral respiratory infection.',
+    'Abnormal':         'Imaging findings outside normal limits — clinical correlation required.',
   },
   head_ct: {
     'Hemorrhage':    'Intracranial hemorrhage detected — emergent neurosurgical evaluation required.',
@@ -25,7 +24,7 @@ const DESCRIPTIONS: Partial<Record<Modality, Record<string, string>>> = {
     'Normal':    'No acute fracture or dislocation identified on this X-ray.',
   },
   ecg: {
-    'Normal':                'Sinus rhythm within normal limits.',
+    'Normal':            'Sinus rhythm within normal limits.',
     'Myocardial Infarction': 'ST-segment changes suggestive of myocardial infarction — urgent cardiology consult.',
     'ST-Depression':         'ST depression noted — ischemia workup recommended.',
     'Abnormal Heartbeat':    'Arrhythmia or conduction abnormality detected.',
@@ -47,22 +46,17 @@ export default function DifferentialDiagnosis({ result }: Props) {
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3)
 
-  const top = sorted[0][1]
+  const top = sorted[0][1]  // for normalising the bar widths to 100%
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h4 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-          <Microscope size={16} /> Differential Diagnosis
-        </h4>
-        {result.calibrated && (
-          <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-radiai-cyan bg-radiai-cyan/10 px-2.5 py-1 rounded-md">
-            <ShieldCheck size={12} /> Calibrated
-          </span>
-        )}
+    <div className="differential-panel">
+      <div className="differential-title">
+        <span className="differential-icon">🔬</span>
+        <span>Differential Diagnosis</span>
+        {result.calibrated && <span className="badge badge-accent diff-cal-badge">🌡 Calibrated</span>}
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="differential-list">
         {sorted.map(([cls, prob], i) => {
           const pct     = Math.round(prob * 100)
           const relW    = top > 0 ? (prob / top) * 100 : 0
@@ -70,40 +64,19 @@ export default function DifferentialDiagnosis({ result }: Props) {
           const desc    = descs[cls] ?? 'Clinical correlation recommended.'
 
           return (
-            <div 
-              key={cls} 
-              className={`flex flex-col gap-2 p-3 rounded-xl border transition-colors ${
-                isPrimary 
-                  ? 'bg-radiai-cyan/5 border-radiai-cyan/30' 
-                  : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-                  isPrimary ? 'bg-radiai-cyan text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                }`}>
-                  {i + 1}
-                </div>
-                <span className={`flex-1 text-sm font-semibold capitalize ${isPrimary ? 'text-slate-900 dark:text-slate-100' : 'text-slate-700 dark:text-slate-300'}`}>
-                  {cls.replace(/_/g, ' ')}
-                </span>
-                <span className={`text-sm font-bold ${isPrimary ? 'text-radiai-cyan' : 'text-slate-400'}`}>
-                  {pct}%
-                </span>
+            <div key={cls} className={`diff-item ${isPrimary ? 'diff-primary' : ''}`}>
+              <div className="diff-item-header">
+                <div className="diff-rank-badge">{i + 1}</div>
+                <span className="diff-label">{cls}</span>
+                <span className={`diff-pct ${isPrimary ? 'diff-pct-primary' : ''}`}>{pct}%</span>
               </div>
-              
-              <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${relW}%` }}
-                  transition={{ duration: 0.8, delay: i * 0.1 }}
-                  className={`h-full rounded-full ${isPrimary ? 'bg-radiai-cyan' : 'bg-slate-300 dark:bg-slate-600'}`}
+              <div className="diff-bar-track">
+                <div
+                  className={`diff-bar-fill ${isPrimary ? 'diff-bar-primary' : ''}`}
+                  style={{ width: `${relW}%` }}
                 />
               </div>
-              
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">
-                {desc}
-              </p>
+              <p className="diff-desc text-dim">{desc}</p>
             </div>
           )
         })}
