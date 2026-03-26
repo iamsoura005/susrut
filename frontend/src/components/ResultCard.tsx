@@ -6,6 +6,7 @@ import {
 import ExplainabilityPanel from './ExplainabilityPanel'
 import DifferentialDiagnosis from './DifferentialDiagnosis'
 import FeedbackWidget from './FeedbackWidget'
+import GeminiPanel from './GeminiPanel'
 
 interface Props {
   result: AnalysisResult
@@ -127,6 +128,11 @@ export default function ResultCard({ result, filename, compact }: Props) {
       {/* Explainability — hidden in compact mode */}
       {!compact && result.explainability && (
         <ExplainabilityPanel explainability={result.explainability} modality={result.modality} />
+      )}
+
+      {/* Gemini AI — hidden in compact mode */}
+      {!compact && result.gemini && (
+        <GeminiPanel gemini={result.gemini} />
       )}
 
       {/* Report download */}

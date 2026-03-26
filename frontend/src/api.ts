@@ -24,6 +24,13 @@ export interface Explainability {
   description: string
 }
 
+export interface GeminiReport {
+  detailed_explanation: string
+  short_summary: string
+  risk_level: 'Low' | 'Medium' | 'High' | 'Unknown'
+  key_findings: string[]
+}
+
 export interface AnalysisResult {
   modality: Modality
   prediction: string
@@ -46,6 +53,8 @@ export interface AnalysisResult {
   // head_ct specific
   hemorrhage_probability?: number
   threshold_used?: number
+  // gemini AI explanation
+  gemini?: GeminiReport
 }
 
 export interface HistoryRecord {

@@ -37,11 +37,16 @@ def _find_last_conv_layer(model) -> Optional[str]:
                 _search(layer)
             # Check output shape: (batch, H, W, C) = 4D = Conv layer
             try:
-                out_shape = layer.output_shape
-                if isinstance(out_shape, list):
-                    out_shape = out_shape[0]
-                if len(out_shape) == 4:
-                    last_name = layer.name
+                out_shape = getattr(layer, 'output_shape', None)
+                if out_shape is None and hasattr(layer, 'output'):
+                    out_shape = layer.output.shape
+                
+                if out_shape is not None:
+                    # Depending on Keras version, shape could be a TensorShape or list/tuple
+                    if isinstance(out_shape, list):
+                        out_shape = out_shape[0]
+                    if len(out_shape) == 4:
+                        last_name = layer.name
             except Exception:
                 pass
 
@@ -91,30 +96,49 @@ def compute_gradcam(
 
         logger.info(f"Grad-CAM using layer: {last_conv_layer_name}")
 
-        # Build gradient model — search all layers including nested ones
-        conv_layer = _get_layer_by_name(model, last_conv_layer_name)
-        if conv_layer is None:
-            logger.warning(f"Layer '{last_conv_layer_name}' not found in model")
+        # Build gradient model
+        last_layer = model.layers[-1]
+        original_activation = getattr(last_layer, 'activation', None)
+        has_softmax = original_activation is not None and getattr(original_activation, '__name__', '') == 'softmax'
+
+        try:
+            # Re-assign activation to linear to compute gradient w.r.t logits (dramatically improves localization)
+            if has_softmax:
+                import tensorflow as tf
+                last_layer.activation = tf.keras.activations.linear
+
+            grad_model = tf.keras.models.Model(
+                inputs=model.inputs,
+                outputs=[_get_layer_by_name(model, last_conv_layer_name).output, model.output],
+            )
+
+            with tf.GradientTape() as tape:
+                conv_outputs, predictions = grad_model(img_array, training=False)
+                
+                # If model only has 1 output node (sigmoid), force pred_index to 0 to avoid IndexError
+                if predictions.shape[-1] == 1:
+                    pred_index = 0
+                elif pred_index is None:
+                    pred_index = int(tf.argmax(predictions[0]))
+                    
+                class_channel = predictions[:, pred_index]
+
+            grads = tape.gradient(class_channel, conv_outputs)
+        finally:
+            if has_softmax:
+                last_layer.activation = original_activation
+
+        # Prevent None grads if disconnected
+        if grads is None:
+            logger.warning("Grad-CAM: Gradients are None. Returning plain image.")
             return _plain_image_b64(img_array)
 
-        grad_model = tf.keras.models.Model(
-            inputs=model.inputs,
-            outputs=[conv_layer.output, model.output],
-        )
-
-        with tf.GradientTape() as tape:
-            conv_outputs, predictions = grad_model(img_array, training=False)
-            if pred_index is None:
-                pred_index = int(tf.argmax(predictions[0]))
-            class_channel = predictions[:, pred_index]
-
-        grads = tape.gradient(class_channel, conv_outputs)
         pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
         conv_outputs = conv_outputs[0]
         heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
         heatmap = tf.squeeze(heatmap).numpy()
 
-        # Proper normalization
+        # Proper normalization (ReLU)
         heatmap = np.maximum(heatmap, 0)
         max_val = heatmap.max()
         if max_val > 1e-8:
@@ -130,18 +154,43 @@ def compute_gradcam(
                 orig_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 if orig_bgr is None:
                     raise ValueError("cv2 decode returned None")
-            except Exception:
+                    
+                # Unpad heatmap from letterbox coordinates back to original aspect ratio
+                th, tw = img_array.shape[1:3]
+                h, w = orig_bgr.shape[:2]
+                scale = min(tw / w, th / h)
+                new_w, new_h = int(w * scale), int(h * scale)
+                x_off = (tw - new_w) // 2
+                y_off = (th - new_h) // 2
+                
+                # Resize low-res heatmap to padded tw, th first
+                heatmap_padded = cv2.resize(heatmap, (tw, th))
+                
+                # Crop to image area
+                heatmap_cropped = heatmap_padded[y_off:y_off + new_h, x_off:x_off + new_w]
+                
+                # Resize cropped heatmap to exactly the original w, h
+                heatmap_resized = cv2.resize(heatmap_cropped, (w, h))
+
+            except Exception as ex:
+                logger.warning(f"Failed to unpad heatmap: {ex}")
                 orig_bgr = _img_array_to_bgr(img_array)
+                h, w = orig_bgr.shape[:2]
+                heatmap_resized = cv2.resize(heatmap, (w, h))
         else:
             orig_bgr = _img_array_to_bgr(img_array)
+            h, w = orig_bgr.shape[:2]
+            heatmap_resized = cv2.resize(heatmap, (w, h))
 
-        h, w = orig_bgr.shape[:2]
-        heatmap_resized = cv2.resize(heatmap, (w, h))
+        # Apply colormap
         heatmap_uint8   = np.uint8(255 * heatmap_resized)
         heatmap_colored = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
 
-        # 60/40 blend: more original image visible
-        superimposed = cv2.addWeighted(orig_bgr, 0.6, heatmap_colored, 0.4, 0)
+        # Use heatmap intensity as alpha mask so background (0) is fully transparent
+        # and doesn't tint the medical image dark blue
+        alpha = heatmap_resized[..., np.newaxis] * 0.6  # max 60% opacity
+        superimposed = (orig_bgr * (1 - alpha) + heatmap_colored * alpha).astype(np.uint8)
+        
         return _encode_image_to_b64(superimposed)
 
     except Exception as e:

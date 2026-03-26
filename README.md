@@ -52,7 +52,8 @@ Susrut Project/
 │   │   ├── services/
 │   │   │   ├── modality_router.py
 │   │   │   ├── history_store.py
-│   │   │   └── report_generator.py
+│   │   │   ├── report_generator.py
+│   │   │   └── gemini_service.py    # NEW — Gemini AI explanation layer
 │   │   └── utils/
 │   │       ├── explainability.py  # Grad-CAM
 │   │       └── uncertainty.py     # Shannon entropy
@@ -108,6 +109,40 @@ Interactive docs: `http://localhost:8000/docs`
 
 > **Note:** Models are loaded from the parent directory (`../`). The .h5 files must stay in the `Susrut Project/` root.
 
+---
+
+## ✨ Gemini AI Integration
+
+RadiAI uses **Google Gemini 1.5 Flash** as a natural-language *explanation layer* on top of existing ML predictions.
+
+> Gemini is **not** used for classification. The ML model is the sole source of the prediction. Gemini only explains, summarizes, and provides a risk assessment in plain language.
+
+### Setup
+
+1. Get a free API key at **[aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)**
+2. Open `backend/.env` and set:
+   ```
+   GEMINI_API_KEY=your_actual_key_here
+   ```
+3. Ensure the SDK is installed (already in `requirements.txt`):
+   ```powershell
+   pip install google-generativeai
+   ```
+
+### What Gemini adds
+
+| Feature | Where |
+|---|---|
+| Detailed explanation of the condition | API response + PDF report |
+| Quick one-sentence summary | API response + PDF (highlighted box) |
+| Risk level (Low / Medium / High) | API response + PDF badge + Frontend card |
+| Key findings bullet list | API response + PDF + Frontend |
+
+### Fallback behaviour
+
+If `GEMINI_API_KEY` is not set, or the Gemini API call fails for any reason, the pipeline continues normally — the ML prediction is returned unchanged with a stub `gemini` object. **The API never returns a 500 error due to Gemini failure.**
+
+
 ### 2. Frontend
 
 ```powershell
@@ -161,6 +196,12 @@ curl -X POST http://localhost:8000/api/analyze \
   "severity": { "level": "High", "score": 0.784, "description": "..." },
   "uncertainty": { "is_uncertain": false, "normalized_entropy": 0.21, "flag": "✅ Confident Prediction" },
   "explainability": { "type": "gradcam_overlay", "image_b64": "...", "description": "..." },
+  "gemini": {
+    "detailed_explanation": "Glioma is a type of tumour that arises from glial cells...",
+    "short_summary": "High-confidence glioma detected; prompt specialist review advised.",
+    "risk_level": "High",
+    "key_findings": ["Irregular mass in right temporal lobe", "High signal intensity", "Surrounding oedema"]
+  },
   "stub": false,
   "report_id": "abc-123-...",
   "report_url": "/api/report/abc-123-..."
@@ -199,6 +240,8 @@ The system detects modality from:
 | `Model not found` warning | Confirm .h5 files are in the `Susrut Project/` root, not inside `backend/` |
 | Port conflict | Change `--port 8000` to any free port and update `VITE_API_URL` |
 | `fpdf2` ImportError | Run `pip install fpdf2` |
+| Gemini not responding | Check `GEMINI_API_KEY` in `backend/.env`; get key from [aistudio.google.com](https://aistudio.google.com/app/apikey) |
+| Gemini output missing from PDF | Ensure Gemini returns valid JSON — check backend logs for `Gemini Error:` |
 
 ---
 

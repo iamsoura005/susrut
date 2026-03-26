@@ -438,4 +438,52 @@
 .history-subtab--active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
 .history-pid { color: var(--accent); font-size: 11px; }
 
+/* ── GeminiPanel ─────────────────────────────────────────────────────────── */
+.gemini-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 4px;
+}
+@media (max-width: 720px) { .gemini-panel { grid-template-columns: 1fr; } }
 
+.gemini-explanation-card {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px 20px; border-radius: var(--radius-md);
+  border: 1px solid rgba(6,182,212,0.18);
+  background: rgba(6,182,212,0.03);
+}
+.gemini-summary-card {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px 20px; border-radius: var(--radius-md);
+  border: 1px solid rgba(99,102,241,0.22);
+  background: linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(6,182,212,0.05) 100%);
+  position: relative; overflow: hidden;
+}
+.gemini-summary-card::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(99,102,241,0.06), transparent);
+  pointer-events: none;
+}
+.gemini-card-header { display: flex; align-items: center; gap: 8px; }
+.gemini-icon { font-size: 18px; }
+.gemini-card-title {
+  flex: 1; font-size: 13px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+.gemini-risk-badge {
+  padding: 3px 10px; border-radius: 100px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+}
+.gemini-risk-low     { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+.gemini-risk-medium  { background: rgba(245,158,11,0.12);  color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+.gemini-risk-high    { background: rgba(239,68,68,0.12);   color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+.gemini-risk-unknown { background: rgba(107,114,128,0.12); color: #6b7280; border: 1px solid rgba(107,114,128,0.25); }
+.gemini-explanation-text { font-size: 13px; line-height: 1.75; color: var(--text-secondary); margin: 0; }
+.gemini-summary-text { font-size: 14px; line-height: 1.7; color: var(--text-primary); font-style: italic; margin: 0; position: relative; z-index: 1; }
+.gemini-findings { display: flex; flex-direction: column; gap: 6px; }
+.gemini-findings-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); }
+.gemini-findings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.gemini-finding-item { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.gemini-bullet { color: var(--accent); font-size: 8px; margin-top: 4px; flex-shrink: 0; }

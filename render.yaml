@@ -12,6 +12,8 @@ services:
         value: 50
       - key: MAX_BATCH_FILES
         value: 20
+      - key: GEMINI_API_KEY
+        sync: false   # Set this secret in the Render dashboard
     disk:
       name: radiai-models
       mountPath: /opt/render/project/src

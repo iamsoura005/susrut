@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.models import brain_mri, chest_ct, head_ct, ecg, bone_xray
 from app.services.modality_classifier import classify as classify_modality
 from app.services.report_generator import generate_report
+from app.services.gemini_service import generate_gemini_report
 from app.services import history_store
 
 logger = logging.getLogger("radiai.routes")
@@ -108,6 +109,10 @@ async def analyze(
 
     result["modality_confidence"] = round(modality_confidence, 4)
 
+    # Gemini AI explanation (non-blocking — failure returns graceful stub)
+    gemini_output = generate_gemini_report(content, result)
+    result["gemini"] = gemini_output
+
     # Generate structured PDF report
     report_id, report_path = generate_report(result, file.filename or "upload", patient_meta)
     result["report_id"]  = report_id
@@ -149,6 +154,9 @@ async def analyze_batch(
             result = _run_inference(modality, content, upload.filename or "upload")
             result["filename"] = upload.filename
             result["modality_confidence"] = round(mod_conf, 4)
+
+            # Gemini AI explanation
+            result["gemini"] = generate_gemini_report(content, result)
 
             patient_meta = {
                 "patient_id": patient_id or "",

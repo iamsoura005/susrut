@@ -58,6 +58,7 @@ frontend/.vite/
 backend/.env
 frontend/.env
 !frontend/.env.example
+!backend/.env.example
 
 # ── IDE & OS ──────────────────────────────────────────────────────────────────
 .vscode/

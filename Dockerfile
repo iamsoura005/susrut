@@ -8,6 +8,8 @@ WORKDIR /app/backend
 # Copy requirements and install
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
+# Ensure new Gemini SDK is installed (in case requirements.txt cache is stale)
+RUN pip install --no-cache-dir google-genai
 
 # Create necessary directories and set permissions
 # Hugging Face runs as user 1000, so we give permissions to /app
@@ -19,6 +21,8 @@ COPY . /app/
 
 # Expose port 7860 (Hugging Face Spaces default port)
 ENV PORT=7860
+# Gemini API Key — set this in HuggingFace Space Secrets UI (never hardcode)
+ENV GEMINI_API_KEY=""
 EXPOSE 7860
 
 # Run the FastAPI app

@@ -180,6 +180,68 @@ def generate_report(
             except Exception as img_err:
                 logger.warning(f"Could not embed heatmap: {img_err}")
 
+        # ── Gemini AI Explanation ──────────────────────────────────────────────
+        gemini = analysis.get("gemini", {})
+        g_explanation = gemini.get("detailed_explanation", "") if gemini else ""
+        g_is_real = g_explanation and "failed" not in g_explanation.lower() and "unavailable" not in g_explanation.lower()
+        if g_is_real:
+            pdf.ln(4)
+            _section(pdf, "AI Detailed Explanation  (Gemini 1.5 Flash)")
+
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(20, 20, 40)
+            pdf.multi_cell(0, 6, g_explanation)
+            pdf.ln(3)
+
+            # Key findings as bullet list
+            findings = gemini.get("key_findings", [])
+            if findings:
+                pdf.set_font("Helvetica", "B", 9)
+                pdf.set_text_color(6, 182, 212)
+                pdf.cell(0, 6, "Key Findings:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.set_font("Helvetica", "", 9)
+                pdf.set_text_color(20, 20, 40)
+                for finding in findings:
+                    pdf.cell(5, 5, "")
+                    pdf.multi_cell(0, 5, f"\u2022  {finding}")
+
+            # Risk level badge (coloured pill)
+            risk = gemini.get("risk_level", "Unknown")
+            pdf.ln(3)
+            risk_colors = {
+                "Low":     (16, 185, 129),   # emerald-500
+                "Medium":  (245, 158, 11),   # amber-500
+                "High":    (239, 68, 68),    # red-500
+                "Unknown": (107, 114, 128),  # gray-500
+            }
+            r, g, b = risk_colors.get(risk, risk_colors["Unknown"])
+            pdf.set_fill_color(r, g, b)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Helvetica", "B", 9)
+            risk_label = f"  Risk Level: {risk}  "
+            pdf.cell(len(risk_label) * 2.4, 7, risk_label, fill=True,
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(5)
+
+            # Quick Summary — highlighted pale-blue box
+            summary = gemini.get("short_summary", "")
+            if summary:
+                _section(pdf, "Quick Summary")
+                import math
+                summary_y = pdf.get_y()
+                estimated_lines = max(2, math.ceil(len(summary) / 85))
+                box_h = estimated_lines * 6 + 8
+                if summary_y + box_h > 270:
+                    pdf.add_page()
+                    summary_y = pdf.get_y()
+                pdf.set_fill_color(224, 247, 255)
+                pdf.rect(15, summary_y, 180, box_h, "F")
+                pdf.set_xy(18, summary_y + 3)
+                pdf.set_text_color(5, 80, 120)
+                pdf.set_font("Helvetica", "I", 9)
+                pdf.multi_cell(174, 6, summary)
+                pdf.ln(3)
+
         # ── Page number footer ─────────────────────────────────────────────────
         pdf.set_y(-25)
         pdf.set_draw_color(30, 40, 60)
